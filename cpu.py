@@ -23,14 +23,14 @@ def decode(instruction):
     imm = pyrtl.WireVector(16, 'imm')  # for I-type 
     addr = pyrtl.WireVector(26, 'addr')  # for J-type instruct
 
-    func <<= data[:6]
-    sh <<= data[6:11]
-    rd <<= data[11:16]
-    rt <<= data[16:21]
-    rs <<= data[21:26]
-    op <<= data[26:]
-    addr <<= data[:26]
-    imm <<= data[:16]
+    func <<= instruction[:6]
+    sh <<= instruction[6:11]
+    rd <<= instruction[11:16]
+    rt <<= instruction[16:21]
+    rs <<= instruction[21:26]
+    op <<= instruction[26:]
+    addr <<= instruction[:26]
+    imm <<= instruction[:16]
 
     return op,rs,rt,rd,sh,func,imm,addr
 
@@ -105,6 +105,9 @@ def pc_update(pc, branch, jump_addr):
     return pc_next
 
 def write_back():
+    """
+        writes alu result -> data memory or register memory, depending on control sig
+    """
     # writes to memory, for store word
     raise NotImplementedError
 
@@ -129,13 +132,19 @@ def top():
     op,rs,rt,rd,sh,func,imm,addr = decode(instruction)
     
     # get control signals
-    reg_dst,branch,reg_write,alu_src,mem_write,mem_toreg,alu_op = controller(op,func)
+    reg_dst,branch,reg_write,alu_src,mem_write,mem_to_reg,alu_op = controller(op,func)
 
-    # initialize register ports reg_read() i think
+    # register outputs (value of data at rs/rt
+    data0 = pyrtl.WireVector(32, 'data0')  # value of rs register (ie. rs=$t0=2)
+    data1 = pyrtl.WireVector(32, 'data1')  # value of rt register
+    data0 <<= rf[rs]
+    data1 <<= rf[rt]
 
     # pass instructions through alu
+    alu_out = pyrtl.WireVector(32, 'alu_out')
+    alu_out <<= alu(data0, data1, alu_op)
 
-    # write_back()
+    # write_back()  
 
     # increment pc
     pc.next <<= pc_update(pc, branch, immed)
