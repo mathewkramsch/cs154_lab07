@@ -2,6 +2,15 @@
 
 import pyrtl
 
+# TODO
+# implement write_back()
+# finish alu operations for each instruction
+# fill out hex for each control sig
+# finish contoller control sigs assignment
+# watch lab07 video
+# look at piazza
+
+
 # Initialize memblocks 
 i_mem = pyrtl.MemBlock(32, addrwidth=32, name='i_mem', max_read_ports=2,
         max_write_ports=4, asynchronous=False, block=None)  # will hold each instruction as hex
@@ -35,19 +44,27 @@ def decode(instruction):
     return op,rs,rt,rd,sh,func,imm,addr
 
 
-def alu(rs, rt, alu_op):
+def alu(rs, rt, immed, alu_op, alu_src):
     """
         does operation
         alu_op: value 1-8 that is mapped to an operation
+        alu_operand = alu_src==0? rt : immed
     """
-    ADD = rs + rt
-    AND = rs & rt
+    alu_operand = pyrtl.WireVector(32, 'alu_operand')
+    with pyrtl.conditional_assignment:
+        with alu_src == 0:
+            alu_operand |= rt
+        with alu_src == 1:
+            alu_operand |= immed
+
+    ADD = rs + alu_operand
+    AND = rs & alu_operand
     ADDI = 
     LUI = 
     ORI = 
     SLT = 
-    LW = 
-    SW = 
+    LW = rs + immed
+    SW = rs + immed
     BEQ = 
 
     alu_output = pyrtl.WireVector(32)  # output
@@ -111,13 +128,15 @@ def controller(op, func):
 def reg_read():
     """
         read values from register
+        dont actualy think we need this one
     """
+    return
 
-def pc_update(pc, branch, jump_addr):
+def pc_update(pc, branch_sig, rel_addr):
     """
         Increments pc address, since i_mem/d_mem = word addressable
         pc_addr: a register holding the address of current instruction
-        branch: control signal, whether pc to jump to branch addr or not
+        branch_sig: control signal, whether pc to jump to branch addr or not
         jump_addr: 16-bit relative address of instruction to jump to if branch needed 
         
         if branch instruction: pc goes to that instruct
@@ -127,43 +146,69 @@ def pc_update(pc, branch, jump_addr):
     pc_incr = pyrtl.WireVector(32)  # wire after pc is incremented
     pc_branch = pyrtl.WireVector(32)  # wire after branch jump
     pc_incr <<= pc + 1  # always start by incrementing pc to next address
-    pc_branch <<= jump_addr.sign_extended(32)  # included pyrtl function
+    pc_branch <<= rel_addr.sign_extended(32)  # included pyrtl function
 
     # use a mux w/ control-sig branch as input to decide if jump needed
     with pyrtl.conditional_assignment:
-        with branch == 0:
+        with branch_sig == 0:
             pc_next |= pc_incr
-        with branch == 1:
+        with branch_sig == 1:
             pc_next |= pc_branch
 
     return pc_next
 
-def write_back():
+def write_back(alu_result, rt, rd, rt_data, reg_write, reg_dst, mem_write, mem_to_reg):
     """
-        writes alu result -> data memory or register memory, depending on control sig
-    """
-    # writes to memory, for store word
-    raise NotImplementedError
+        writes alu result in place specified by control sigs
+        alu_result: result of alu operation
+        rt_data: for store word, the word to store in memory
+        reg_write: if write to register or not
+        reg_dst: specifies register destination to write to
+        mem_write: if write to memory or not
+        mem_to_reg: if write to register is from memory or not
 
-# These functions implement smaller portions of the CPU design. A 
-# top-level function is required to bring these smaller portions
-# together and finish your CPU design. Here you will instantiate 
-# the functions, i.e., build hardware, and orchestrate the various 
-# parts of the CPU together. 
+        writes to either d_mem or rf
+    """
+    # determine which register to write to
+    write_register = pyrtl.WireVector(32, 'write_register')
+    with pyrtl.conditional_assignment:
+        with reg_dst == 0:
+            write_register |= rt
+        with reg_dst == 1:
+            write_register |= rd
+    
+    # determine where to get data to write to
+    write_data = pyrtl.WireVector(32, 'write_data')
+    with pyrtl.conditional_assignment:
+        with mem_to_reg == 0:
+            write_data |= alu_result
+        with mem_to_reg == 1:
+            write_data |= d_mem[alu_result]  # here alu_result is an address (lw)
+
+    # write write_data data to write_register register
+    with pyrtl.conditional_assignment:
+        with reg_write == 1:
+            rf[write_register] |= write_data
+
+    # write to d_mem @ addr specified by alu_result (sw)
+    with pyrtl.conditional_assignment:
+        with mem_write == 1:
+            d_mem[alu_result] |= rt_data
+
 
 def top():
-
-    # initialize register input/outputs
-
-    # initialize program counter (pc): holds word address of current instruction
-    pc = pyrtl.Register(32)
+    """
+        Top-level function to bring smaller portions together
+    """
 
     # get instructions by pc
+    pc = pyrtl.Register(32)
     instruction = pyrtl.WireVector(32, 'instruction')
     instruction <<= i_mem[pc]
 
     # decode instructions
-    op,rs,rt,rd,sh,func,imm,addr = decode(instruction)
+    op,rs,rt,rd,sh,func,immed,addr = decode(instruction)
+        # i dont think need addr, since no jumps implemented
     
     # get control signals
     reg_dst,branch,reg_write,alu_src,mem_write,mem_to_reg,alu_op = controller(op,func)
@@ -176,10 +221,11 @@ def top():
 
     # pass instructions through alu
     alu_out = pyrtl.WireVector(32, 'alu_out')
-    alu_out <<= alu(data0, data1, alu_op)
+    alu_out <<= alu(data0, data1, alu_op, alu_src)
 
-    # write_back()  
-
+    # write_back()
+    write_back(alu_out, rt, rd, data1, reg_write, reg_dst, mem_write, mem_to_reg)
+    
     # increment pc
     pc.next <<= pc_update(pc, branch, immed)
     
