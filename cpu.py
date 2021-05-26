@@ -3,13 +3,17 @@
 import pyrtl
 
 # TODO
-# implement write_back()
-# finish alu operations for each instruction
-# fill out hex for each control sig
-# finish contoller control sigs assignment
-# watch lab07 video
-# look at piazza
+# go home
+# finish alu operations for each instruction in alu()
+# fill out hex for each control sig in google sheets
+# finish contoller control sigs assignment in controller()
+# refactor all code so muxes are seperate from blocks (ie. connect wires in top())
+    # structure code based off video
+    # put wires into dictionary
+# hook up to MIPS instructions and test
 
+# NOTES
+# need to do WRITE_ENABLE on rf and d_mem
 
 # Initialize memblocks 
 i_mem = pyrtl.MemBlock(32, addrwidth=32, name='i_mem', max_read_ports=2,
@@ -44,28 +48,39 @@ def decode(instruction):
     return op,rs,rt,rd,sh,func,imm,addr
 
 
-def alu(rs, rt, immed, alu_op, alu_src):
+def alu(data0, data1, immed, alu_op, alu_src):
     """
         does operation
+        data0: rf[rs]
+        data1: rf[rt]
+        immed: 16-bit immediate value
         alu_op: value 1-8 that is mapped to an operation
         alu_operand = alu_src==0? rt : immed
     """
+    # make zero register for comparison instructions 
+    # (subtract and compare result to zero)
+
+    # sign_ext_immed = pyrtl.WireVecor(32, 'sign_ext_immed')
+    # zero_ext_immed = pyrtl.WireVecor(32, 'zero_ext_immed')
     alu_operand = pyrtl.WireVector(32, 'alu_operand')
     with pyrtl.conditional_assignment:
-        with alu_src == 0:
-            alu_operand |= rt
+        with alu_src == 0:  # alu_src is 2 bits (for ori) 
+            alu_operand |= data1
         with alu_src == 1:
-            alu_operand |= immed
+            alu_operand |= immed.sign_extended(32)
+        with alu_src == 2:
+            alu_operand |= immed.zero_extended(32)
+        # with alu_src == 3: (nothing)
 
-    ADD = rs + alu_operand
-    AND = rs & alu_operand
-    ADDI = 
-    LUI = 
-    ORI = 
-    SLT = 
-    LW = rs + immed
-    SW = rs + immed
-    BEQ = 
+    ADD = data0 + alu_operand
+    AND = data0 & alu_operand
+    ADDI = ADD # add immediate
+    LUI =   # load upper immediate
+    ORI = rs | alu_operand  # or immediate
+    SLT =   # set less than (set if less than) <-- use zero reg & subtract to compare
+    LW = ADD  # immed address + offset
+    SW = ADD  # since d_mem[rf[rs] + immed_ext] = rf[rt] is store word
+    BEQ =  # branch on equal (subtract & compare to zero reg)
 
     alu_output = pyrtl.WireVector(32)  # output
     
@@ -132,7 +147,7 @@ def reg_read():
     """
     return
 
-def pc_update(pc, branch_sig, rel_addr):
+def pc_update(pc, branch_sig, addr):
     """
         Increments pc address, since i_mem/d_mem = word addressable
         pc_addr: a register holding the address of current instruction
@@ -146,7 +161,7 @@ def pc_update(pc, branch_sig, rel_addr):
     pc_incr = pyrtl.WireVector(32)  # wire after pc is incremented
     pc_branch = pyrtl.WireVector(32)  # wire after branch jump
     pc_incr <<= pc + 1  # always start by incrementing pc to next address
-    pc_branch <<= rel_addr.sign_extended(32)  # included pyrtl function
+    pc_branch <<= addr  # included pyrtl function
 
     # use a mux w/ control-sig branch as input to decide if jump needed
     with pyrtl.conditional_assignment:
@@ -208,6 +223,8 @@ def top():
 
     # decode instructions
     op,rs,rt,rd,sh,func,immed,addr = decode(instruction)
+    immed_ext = pyrtl.WireVector(32, 'immed_ext')
+    immed_ext <<= immed.sign_extended(32)  # immediate relative address -> extended to 32-bits
         # i dont think need addr, since no jumps implemented
     
     # get control signals
@@ -221,13 +238,13 @@ def top():
 
     # pass instructions through alu
     alu_out = pyrtl.WireVector(32, 'alu_out')
-    alu_out <<= alu(data0, data1, alu_op, alu_src)
+    alu_out <<= alu(data0, data1, immed, alu_op, alu_src)
 
     # write_back()
     write_back(alu_out, rt, rd, data1, reg_write, reg_dst, mem_write, mem_to_reg)
     
     # increment pc
-    pc.next <<= pc_update(pc, branch, immed)
+    pc.next <<= pc_update(pc, branch, immed_ext)
     
 
 if __name__ == '__main__':
