@@ -35,10 +35,44 @@ def decode(instruction):
     return op,rs,rt,rd,sh,func,imm,addr
 
 
-def alu():
+def alu(rs, rt, alu_op):
     """
-        performs operations
+        does operation
+        alu_op: value 1-8 that is mapped to an operation
     """
+    ADD = rs + rt
+    AND = rs & rt
+    ADDI = 
+    LUI = 
+    ORI = 
+    SLT = 
+    LW = 
+    SW = 
+    BEQ = 
+
+    alu_output = pyrtl.WireVector(32)  # output
+    
+    with pyrtl.conditional_assignment:
+        with alu_op == 0:
+            alu_output |= ADD
+        with alu_op == 1:
+            alu_output |= AND
+        with alu_op == 2:
+            alu_output |= ADDI
+        with alu_op == 3:
+            alu_output |= LUI
+        with alu_op == 4:
+            alu_output|= ORI
+        with alu_op == 5:
+            alu_output |= SLT
+        with alu_op == 6:
+            alu_output |= LW 
+        with alu_op == 7:
+            alu_output |= SW
+        with alu_op == 8:
+            alu_output |= BEQ
+
+    return alu_output
 
 def controller(op, func):
     """
@@ -58,7 +92,7 @@ def controller(op, func):
     control_signals = pyrtl.WireVector(10, 'control_signals')
     with pyrtl.conditional_assignment:
         with op == 0:
-            with func == 0x20:
+            with func == 0x20:  # ADD
                 control_signals |= 0x280
             # ...
         # ...
