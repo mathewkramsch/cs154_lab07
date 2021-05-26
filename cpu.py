@@ -1,33 +1,112 @@
+# cpu.py - designing a single-cycle CPU in PyRTL
+
 import pyrtl
 
-# Initialize your memblocks here: 
-i_mem = pyrtl.MemBlock(...)
-d_mem = pyrtl.MemBlock(...)
-rf    = pyrtl.MemBlock(...)
+# Initialize memblocks 
+i_mem = pyrtl.MemBlock(32, addrwidth=32, name='i_mem', max_read_ports=2,
+        max_write_ports=4, asynchronous=False, block=None)  # will hold each instruction as hex
+d_mem = pyrtl.MemBlock(32, addrwidth=32, name='d_mem', max_read_ports=2,
+        max_write_ports=4, asynchronous=True, block=None)  # holds data memory
+rf    = pyrtl.MemBlock(32, addrwidth=32, name='rf', max_write_ports=2,
+        max_write_ports=4, asynchronous=True, block=None)  # holds register memory
 
-# When working on large designs, such as this CPU implementation, it is
-# useful to partition your design into smaller, reusable, hardware
-# blocks. In PyRTL, one way to do this is through functions. Here are 
-# some examples of hardware blocks that can help you get started on this
-# CPU design. You may have already worked on this logic in prior labs.
+def decode(instruction):
+    """
+        decodes instructions
+    """
+    op = pyrtl.WireVector(6, 'op')
+    rs = pyrtl.WireVector(5, 'rs')
+    rt = pyrtl.WireVector(5, 'rt')
+    rd = pyrtl.WireVector(5, 'rd')
+    sh = pyrtl.WireVector(5, 'sh')
+    func = pyrtl.WireVector(6, 'func')
+    imm = pyrtl.WireVector(16, 'imm')  # for I-type 
+    addr = pyrtl.WireVector(26, 'addr')  # for J-type instruct
 
-def decode():
-   raise NotImplementedError
+    func <<= data[:6]
+    sh <<= data[6:11]
+    rd <<= data[11:16]
+    rt <<= data[16:21]
+    rs <<= data[21:26]
+    op <<= data[26:]
+    addr <<= data[:26]
+    imm <<= data[:16]
+
+    return op,rs,rt,rd,sh,func,imm,addr
+
 
 def alu():
-   raise NotImplementedError
+    """
+        performs operations
+    """
 
-def controller():
-   raise NotImplementedError
+def controller(op, func):
+    """
+        returns 1-3-bit wirevectors of control signals
+        used for telling hardware components what to do
+    """
+ 
+    reg_dst = pyrtl.WireVector(1, 'reg_dst')
+    branch = pyrtl.WireVector(1, 'branch')
+    reg_write = pyrtl.WireVector(1, 'reg_write')
+    alu_src = pyrtl.WireVector(2, 'alu_src')
+    mem_write = pyrtl.WireVector(1, 'mem_write')
+    mem_to_reg = pyrtl.WireVector(1, 'mem_to_reg')
+    alu_op = pyrtl.WireVector(3, 'alu_op')
+
+    # get control signals as 10-bit wirevector of control sigs -> hex
+    control_signals = pyrtl.WireVector(10, 'control_signals')
+    with pyrtl.conditional_assignment:
+        with op == 0:
+            with func == 0x20:
+                control_signals |= 0x280
+            # ...
+        # ...
+
+    # extract control signals
+    alu_op <<= control_signals[0:3]
+    mem_to_reg <<= control_signals[3]
+    mem_write <<= control_signals[4]
+    alu_src <<= control_signals[5:7]
+    reg_write <<= control_signals[7]
+    branch <<= control_signals[8]
+    reg_dst <<= control_signals[9]
+
+    return reg_dst,branch,reg_write,alu_src,mem_write,mem_toreg,alu_op
 
 def reg_read():
-   raise NotImplementedError
+    """
+        read values from register
+    """
 
-def pc_update():
-   raise NotImplementedError
+def pc_update(pc, branch, jump_addr):
+    """
+        Increments pc address, since i_mem/d_mem = word addressable
+        pc_addr: a register holding the address of current instruction
+        branch: control signal, whether pc to jump to branch addr or not
+        jump_addr: 16-bit relative address of instruction to jump to if branch needed 
+        
+        if branch instruction: pc goes to that instruct
+        else: pc increments by 1
+    """
+    pc_next = pyrtl.WireVector(32)  # this will be the next pc value
+    pc_incr = pyrtl.WireVector(32)  # wire after pc is incremented
+    pc_branch = pyrtl.WireVector(32)  # wire after branch jump
+    pc_incr <<= pc + 1  # always start by incrementing pc to next address
+    pc_branch <<= jump_addr.sign_extended(32)  # included pyrtl function
+
+    # use a mux w/ control-sig branch as input to decide if jump needed
+    with pyrtl.conditional_assignment:
+        with branch == 0:
+            pc_next |= pc_incr
+        with branch == 1:
+            pc_next |= pc_branch
+
+    return pc_next
 
 def write_back():
-   raise NotImplementedError
+    # writes to memory, for store word
+    raise NotImplementedError
 
 # These functions implement smaller portions of the CPU design. A 
 # top-level function is required to bring these smaller portions
@@ -36,7 +115,31 @@ def write_back():
 # parts of the CPU together. 
 
 def top():
-   raise NotImplementedError
+
+    # initialize register input/outputs
+
+    # initialize program counter (pc): holds word address of current instruction
+    pc = pyrtl.Register(32)
+
+    # get instructions by pc
+    instruction = pyrtl.WireVector(32, 'instruction')
+    instruction <<= i_mem[pc]
+
+    # decode instructions
+    op,rs,rt,rd,sh,func,imm,addr = decode(instruction)
+    
+    # get control signals
+    reg_dst,branch,reg_write,alu_src,mem_write,mem_toreg,alu_op = controller(op,func)
+
+    # initialize register ports reg_read() i think
+
+    # pass instructions through alu
+
+    # write_back()
+
+    # increment pc
+    pc.next <<= pc_update(pc, branch, immed)
+    
 
 if __name__ == '__main__':
 
