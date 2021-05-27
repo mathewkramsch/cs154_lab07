@@ -152,39 +152,43 @@ def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
     immed_ext <<= instr['imm'].sign_extended(32)
     pc.next <<= pc_update(pc, control_sigs['branch'], immed_ext)
     
+###############
+
+#def top():
+# Initialize memblocks 
+i_mem = MemBlock(32, addrwidth=32, name='i_mem')  # will hold each instruction as hex
+d_mem = MemBlock(32, addrwidth=32, name='d_mem', asynchronous=True)  # holds data memory
+rf    = MemBlock(32, addrwidth=32, name='rf', asynchronous=True)  # holds register memory
+
+# get instructions by pc
+pc = Register(32)
+
+instr = {  # instruction wires
+        'op' : WireVector(6, 'op'),
+        'rs' : WireVector(5, 'rs'),
+        'rt' : WireVector(5, 'rt'),
+        'rd' : WireVector(5, 'rd'),
+        #'sh' : WireVector(5, 'sh'),
+        'func' : WireVector(6, 'func'),
+        'imm' : WireVector(16, 'imm')  # for I-type 
+       # 'addr' : WireVector(26, 'addr')  # for J-type instruct
+}
+
+control_sigs = {  # control signal wires
+        'reg_dst' : WireVector(1, 'reg_dst'),
+        'branch' : WireVector(1, 'branch'),
+        'reg_write' : WireVector(1, 'reg_write'),
+        'alu_src' : WireVector(2, 'alu_src'),
+        'mem_write' : WireVector(1, 'mem_write'),
+        'mem_to_reg' : WireVector(1, 'mem_to_reg'),
+        'alu_op' : WireVector(3, 'alu_op')
+}
+
+cpu(pc, i_mem, d_mem, rf, instr, control_sigs)
+
+#top()
 
 if __name__ == '__main__':
-
-    # Initialize memblocks 
-    i_mem = MemBlock(32, addrwidth=32, name='i_mem')  # will hold each instruction as hex
-    d_mem = MemBlock(32, addrwidth=32, name='d_mem', asynchronous=True)  # holds data memory
-    rf    = MemBlock(32, addrwidth=32, name='rf', asynchronous=True)  # holds register memory
-
-    # get instructions by pc
-    pc = Register(32)
-
-    instr = {  # instruction wires
-            'op' : WireVector(6, 'op'),
-            'rs' : WireVector(5, 'rs'),
-            'rt' : WireVector(5, 'rt'),
-            'rd' : WireVector(5, 'rd'),
-            #'sh' : WireVector(5, 'sh'),
-            'func' : WireVector(6, 'func'),
-            'imm' : WireVector(16, 'imm')  # for I-type 
-           # 'addr' : WireVector(26, 'addr')  # for J-type instruct
-    }
-
-    control_sigs = {  # control signal wires
-            'reg_dst' : WireVector(1, 'reg_dst'),
-            'branch' : WireVector(1, 'branch'),
-            'reg_write' : WireVector(1, 'reg_write'),
-            'alu_src' : WireVector(2, 'alu_src'),
-            'mem_write' : WireVector(1, 'mem_write'),
-            'mem_to_reg' : WireVector(1, 'mem_to_reg'),
-            'alu_op' : WireVector(3, 'alu_op')
-    }
-
-    cpu(pc, i_mem, d_mem, rf, instr, control_sigs)
 
     # Start a simulation trace
     sim_trace = SimulationTrace()
