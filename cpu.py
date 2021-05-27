@@ -49,7 +49,7 @@ def controller(op, func, control_sigs):
     control_sigs['branch'] <<= control_hex[8]
     control_sigs['reg_dst'] <<= control_hex[9]
 
-def alu(input1, input2, alu_op, zero_reg):
+def alu(input1, input2, alu_op): #, zero_reg):
     # make zero register for comparison instructions 
     # (subtract and compare result to zero)
 
@@ -125,8 +125,8 @@ def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
             input2 |= instr['imm'].zero_extended(32)  # for ori
         with control_sigs['alu_src'] == 3:
             input2 |= instr['imm'].zero_extended(32)  # (WRONG) imm, 16'b0 for lui: load upper immediate
-    zero_reg = Register(32)  # initialize zero register
-    alu_out <<= alu(rs_data, input2, control_sigs['alu_op'], zero_reg)
+    #zero_reg = Register(32)  # initialize zero register
+    alu_out <<= alu(rs_data, input2, control_sigs['alu_op'])#, zero_reg)
 
     # determine which register to write to
     write_register = WireVector(32, 'write_register')
@@ -152,9 +152,8 @@ def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
     immed_ext <<= instr['imm'].sign_extended(32)
     pc.next <<= pc_update(pc, control_sigs['branch'], immed_ext)
     
-###############
+########################################################################
 
-#def top():
 # Initialize memblocks 
 i_mem = MemBlock(32, addrwidth=32, name='i_mem')  # will hold each instruction as hex
 d_mem = MemBlock(32, addrwidth=32, name='d_mem', asynchronous=True)  # holds data memory
@@ -186,7 +185,7 @@ control_sigs = {  # control signal wires
 
 cpu(pc, i_mem, d_mem, rf, instr, control_sigs)
 
-#top()
+########################################################################
 
 if __name__ == '__main__':
 
