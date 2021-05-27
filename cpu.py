@@ -1,170 +1,98 @@
 # cpu.py - designing a single-cycle CPU in PyRTL
 
 import pyrtl
+from pyrtl import *
 
 # TODO
-# go home
 # finish alu operations for each instruction in alu()
-# fill out hex for each control sig in google sheets
-# finish contoller control sigs assignment in controller()
-# refactor all code so muxes are seperate from blocks (ie. connect wires in top())
-    # structure code based off video
-    # put wires into dictionary
 # hook up to MIPS instructions and test
 
-# NOTES
-# need to do WRITE_ENABLE on rf and d_mem
+def decode(instruction, instr):
+    instr['func'] <<= instruction[:6]
+    #instr['sh'] <<= instruction[6:11]
+    instr['rd'] <<= instruction[11:16]
+    instr['rt'] <<= instruction[16:21]
+    instr['rs'] <<= instruction[21:26]
+    instr['op'] <<= instruction[26:]
+    #instr['addr'] <<= instruction[:26]
+    instr['imm'] <<= instruction[:16]
 
-# Initialize memblocks 
-i_mem = pyrtl.MemBlock(32, addrwidth=32, name='i_mem', max_read_ports=2,
-        max_write_ports=4, asynchronous=False, block=None)  # will hold each instruction as hex
-d_mem = pyrtl.MemBlock(32, addrwidth=32, name='d_mem', max_read_ports=2,
-        max_write_ports=4, asynchronous=True, block=None)  # holds data memory
-rf    = pyrtl.MemBlock(32, addrwidth=32, name='rf', max_write_ports=2,
-        max_write_ports=4, asynchronous=True, block=None)  # holds register memory
+def controller(op, func, control_sigs):
+    # get control signals as 10-bit wirevector of control sigs -> hex
+    control_hex = WireVector(10, 'control_hex')
+    with conditional_assignment:
+        with op == 0:  # R-Type
+            with func == 0x20:  # ADD
+                control_hex |= 0x280
+            with func == 0x24:  # AND
+                control_hex |= 0x281
+            with func == 0x2A:  # SLT
+                control_hex |= 0x284
+        with op == 0x8:  # ADDI
+            control_hex |= 0x0A0
+        with op == 0xF:  # LUI
+            control_hex |= 0x0E2
+        with op == 0xD:  # ORI
+            control_hex |= 0x0C3
+        with op == 0x23:  # LW
+            control_hex |= 0x0A8
+        with op == 0x2B:  # SW
+            control_hex |= 0x030
+        with op == 0x4:  # BEQ
+            control_hex |= 0x105
 
-def decode(instruction):
-    """
-        decodes instructions
-    """
-    op = pyrtl.WireVector(6, 'op')
-    rs = pyrtl.WireVector(5, 'rs')
-    rt = pyrtl.WireVector(5, 'rt')
-    rd = pyrtl.WireVector(5, 'rd')
-    sh = pyrtl.WireVector(5, 'sh')
-    func = pyrtl.WireVector(6, 'func')
-    imm = pyrtl.WireVector(16, 'imm')  # for I-type 
-    addr = pyrtl.WireVector(26, 'addr')  # for J-type instruct
+    control_sigs['alu_op'] <<= control_hex[0:3]
+    control_sigs['mem_to_reg'] <<= control_hex[3]
+    control_sigs['mem_write'] <<= control_hex[4]
+    control_sigs['alu_src'] <<= control_hex[5:7]
+    control_sigs['reg_write'] <<= control_hex[7]
+    control_sigs['branch'] <<= control_hex[8]
+    control_sigs['reg_dst'] <<= control_hex[9]
 
-    func <<= instruction[:6]
-    sh <<= instruction[6:11]
-    rd <<= instruction[11:16]
-    rt <<= instruction[16:21]
-    rs <<= instruction[21:26]
-    op <<= instruction[26:]
-    addr <<= instruction[:26]
-    imm <<= instruction[:16]
-
-    return op,rs,rt,rd,sh,func,imm,addr
-
-
-def alu(data0, data1, immed, alu_op, alu_src):
-    """
-        does operation
-        data0: rf[rs]
-        data1: rf[rt]
-        immed: 16-bit immediate value
-        alu_op: value 1-8 that is mapped to an operation
-        alu_operand = alu_src==0? rt : immed
-    """
+def alu(input1, input2, alu_op, zero_reg):
     # make zero register for comparison instructions 
     # (subtract and compare result to zero)
 
-    # sign_ext_immed = pyrtl.WireVecor(32, 'sign_ext_immed')
-    # zero_ext_immed = pyrtl.WireVecor(32, 'zero_ext_immed')
-    alu_operand = pyrtl.WireVector(32, 'alu_operand')
-    with pyrtl.conditional_assignment:
-        with alu_src == 0:  # alu_src is 2 bits (for ori) 
-            alu_operand |= data1
-        with alu_src == 1:
-            alu_operand |= immed.sign_extended(32)
-        with alu_src == 2:
-            alu_operand |= immed.zero_extended(32)
-        # with alu_src == 3: (nothing)
+    ADD = input1 + input2  # shared w/ addi, lw, sw
+    AND = input1 & input2
+    LUI = input2  # load upper immediate
+    ORI = input1 | input2  # or immediate
+    SLT =input1  # (WRONG) set less than (set if less than) <-- use zero reg & subtract to compare
+    BEQ = input1  # (WRONG) branch on equal (subtract & compare to zero reg)
 
-    ADD = data0 + alu_operand
-    AND = data0 & alu_operand
-    ADDI = ADD # add immediate
-    LUI =   # load upper immediate
-    ORI = rs | alu_operand  # or immediate
-    SLT =   # set less than (set if less than) <-- use zero reg & subtract to compare
-    LW = ADD  # immed address + offset
-    SW = ADD  # since d_mem[rf[rs] + immed_ext] = rf[rt] is store word
-    BEQ =  # branch on equal (subtract & compare to zero reg)
-
-    alu_output = pyrtl.WireVector(32)  # output
+    alu_output = WireVector(32)  # output
     
-    with pyrtl.conditional_assignment:
+    with conditional_assignment:
         with alu_op == 0:
             alu_output |= ADD
         with alu_op == 1:
             alu_output |= AND
         with alu_op == 2:
-            alu_output |= ADDI
-        with alu_op == 3:
             alu_output |= LUI
+        with alu_op == 3:
+            alu_output |= ORI
         with alu_op == 4:
-            alu_output|= ORI
+            alu_output|= SLT
         with alu_op == 5:
-            alu_output |= SLT
-        with alu_op == 6:
-            alu_output |= LW 
-        with alu_op == 7:
-            alu_output |= SW
-        with alu_op == 8:
             alu_output |= BEQ
 
     return alu_output
 
-def controller(op, func):
-    """
-        returns 1-3-bit wirevectors of control signals
-        used for telling hardware components what to do
-    """
- 
-    reg_dst = pyrtl.WireVector(1, 'reg_dst')
-    branch = pyrtl.WireVector(1, 'branch')
-    reg_write = pyrtl.WireVector(1, 'reg_write')
-    alu_src = pyrtl.WireVector(2, 'alu_src')
-    mem_write = pyrtl.WireVector(1, 'mem_write')
-    mem_to_reg = pyrtl.WireVector(1, 'mem_to_reg')
-    alu_op = pyrtl.WireVector(3, 'alu_op')
+def write_back_reg(write_reg, write_data, rf, reg_write):
+    rf[write_reg] <<= MemBlock.EnabledWrite(write_data, enable=reg_write)
 
-    # get control signals as 10-bit wirevector of control sigs -> hex
-    control_signals = pyrtl.WireVector(10, 'control_signals')
-    with pyrtl.conditional_assignment:
-        with op == 0:
-            with func == 0x20:  # ADD
-                control_signals |= 0x280
-            # ...
-        # ...
-
-    # extract control signals
-    alu_op <<= control_signals[0:3]
-    mem_to_reg <<= control_signals[3]
-    mem_write <<= control_signals[4]
-    alu_src <<= control_signals[5:7]
-    reg_write <<= control_signals[7]
-    branch <<= control_signals[8]
-    reg_dst <<= control_signals[9]
-
-    return reg_dst,branch,reg_write,alu_src,mem_write,mem_toreg,alu_op
-
-def reg_read():
-    """
-        read values from register
-        dont actualy think we need this one
-    """
-    return
+def write_back_mem(mem_addr, write_data, d_mem, mem_write):
+    d_mem[mem_addr] <<= MemBlock.EnabledWrite(write_data, enable=mem_write)
 
 def pc_update(pc, branch_sig, addr):
-    """
-        Increments pc address, since i_mem/d_mem = word addressable
-        pc_addr: a register holding the address of current instruction
-        branch_sig: control signal, whether pc to jump to branch addr or not
-        jump_addr: 16-bit relative address of instruction to jump to if branch needed 
-        
-        if branch instruction: pc goes to that instruct
-        else: pc increments by 1
-    """
-    pc_next = pyrtl.WireVector(32)  # this will be the next pc value
-    pc_incr = pyrtl.WireVector(32)  # wire after pc is incremented
-    pc_branch = pyrtl.WireVector(32)  # wire after branch jump
+    pc_next = WireVector(32)  # this will be the next pc value
+    pc_incr = WireVector(32)  # wire after pc is incremented
+    pc_branch = WireVector(32)  # wire after branch jump
     pc_incr <<= pc + 1  # always start by incrementing pc to next address
     pc_branch <<= addr  # included pyrtl function
 
     # use a mux w/ control-sig branch as input to decide if jump needed
-    with pyrtl.conditional_assignment:
+    with conditional_assignment:
         with branch_sig == 0:
             pc_next |= pc_incr
         with branch_sig == 1:
@@ -172,132 +100,94 @@ def pc_update(pc, branch_sig, addr):
 
     return pc_next
 
-def write_back(alu_result, rt, rd, rt_data, reg_write, reg_dst, mem_write, mem_to_reg):
-    """
-        writes alu result in place specified by control sigs
-        alu_result: result of alu operation
-        rt_data: for store word, the word to store in memory
-        reg_write: if write to register or not
-        reg_dst: specifies register destination to write to
-        mem_write: if write to memory or not
-        mem_to_reg: if write to register is from memory or not
-
-        writes to either d_mem or rf
-    """
-    # determine which register to write to
-    write_register = pyrtl.WireVector(32, 'write_register')
-    with pyrtl.conditional_assignment:
-        with reg_dst == 0:
-            write_register |= rt
-        with reg_dst == 1:
-            write_register |= rd
-    
-    # determine where to get data to write to
-    write_data = pyrtl.WireVector(32, 'write_data')
-    with pyrtl.conditional_assignment:
-        with mem_to_reg == 0:
-            write_data |= alu_result
-        with mem_to_reg == 1:
-            write_data |= d_mem[alu_result]  # here alu_result is an address (lw)
-
-    # write write_data data to write_register register
-    with pyrtl.conditional_assignment:
-        with reg_write == 1:
-            rf[write_register] |= write_data
-
-    # write to d_mem @ addr specified by alu_result (sw)
-    with pyrtl.conditional_assignment:
-        with mem_write == 1:
-            d_mem[alu_result] |= rt_data
-
-
-def top():
-    """
-        Top-level function to bring smaller portions together
-    """
-
-    # get instructions by pc
-    pc = pyrtl.Register(32)
-    instruction = pyrtl.WireVector(32, 'instruction')
-    instruction <<= i_mem[pc]
-
-    # decode instructions
-    op,rs,rt,rd,sh,func,immed,addr = decode(instruction)
-    immed_ext = pyrtl.WireVector(32, 'immed_ext')
-    immed_ext <<= immed.sign_extended(32)  # immediate relative address -> extended to 32-bits
-        # i dont think need addr, since no jumps implemented
-    
-    # get control signals
-    reg_dst,branch,reg_write,alu_src,mem_write,mem_to_reg,alu_op = controller(op,func)
+def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
+    # get instruction, decode, set up control signals
+    instruction = WireVector(32, 'instruction')
+    instruction <<= i_mem[pc]  # get instruction
+    decode(instruction, instr)  # populates instr wires
+    controller(instr['op'], instr['func'], control_sigs)  # populates control_sigs
 
     # register outputs (value of data at rs/rt
-    data0 = pyrtl.WireVector(32, 'data0')  # value of rs register (ie. rs=$t0=2)
-    data1 = pyrtl.WireVector(32, 'data1')  # value of rt register
-    data0 <<= rf[rs]
-    data1 <<= rf[rt]
+    rs_data = WireVector(32, 'rs_data')  # value of rs register (ie. rs=$t0=2)
+    rt_data = WireVector(32, 'rt_data')  # value of rt register
+    rs_data <<= rf[instr['rs']]
+    rt_data <<= rf[instr['rt']]
 
     # pass instructions through alu
-    alu_out = pyrtl.WireVector(32, 'alu_out')
-    alu_out <<= alu(data0, data1, immed, alu_op, alu_src)
+    alu_out = WireVector(32, 'alu_out')
+    input2 = WireVector(32, 'alu_operand')
+    with conditional_assignment:  # figure out what to input into alu
+        with control_sigs['alu_src'] == 0: 
+            input2 |= rt_data
+        with control_sigs['alu_src'] == 1:
+            input2 |= instr['imm'].sign_extended(32)
+        with control_sigs['alu_src'] == 2:
+            input2 |= instr['imm'].zero_extended(32)  # for ori
+        with control_sigs['alu_src'] == 3:
+            input2 |= instr['imm'].zero_extended(32)  # (WRONG) imm, 16'b0 for lui: load upper immediate
+    zero_reg = Register(32)  # initialize zero register
+    alu_out <<= alu(rs_data, input2, control_sigs['alu_op'], zero_reg)
 
-    # write_back()
-    write_back(alu_out, rt, rd, data1, reg_write, reg_dst, mem_write, mem_to_reg)
+    # determine which register to write to
+    write_register = WireVector(32, 'write_register')
+    with conditional_assignment:
+        with control_sigs['reg_dst'] == 0:
+            write_register |= instr['rt']
+        with control_sigs['reg_dst'] == 1:
+            write_register |= instr['rd']
+    
+    # determine where to get data to write to
+    write_data_reg = WireVector(32, 'write_data')
+    with conditional_assignment:
+        with control_sigs['mem_to_reg'] == 0:
+            write_data_reg |= alu_out
+        with control_sigs['mem_to_reg'] == 1:
+            write_data_reg |= d_mem[alu_out]  # here alu_result is an address (lw)
+    
+    write_back_reg(write_register, write_data_reg, rf, control_sigs['reg_write'])
+    write_back_mem(alu_out, rt_data, d_mem, control_sigs['mem_write'])
     
     # increment pc
-    pc.next <<= pc_update(pc, branch, immed_ext)
+    immed_ext = WireVector(32, 'immed_ext')
+    immed_ext <<= instr['imm'].sign_extended(32)
+    pc.next <<= pc_update(pc, control_sigs['branch'], immed_ext)
     
 
 if __name__ == '__main__':
 
-    """
+    # Initialize memblocks 
+    i_mem = MemBlock(32, addrwidth=32, name='i_mem')  # will hold each instruction as hex
+    d_mem = MemBlock(32, addrwidth=32, name='d_mem', asynchronous=True)  # holds data memory
+    rf    = MemBlock(32, addrwidth=32, name='rf', asynchronous=True)  # holds register memory
 
-    Here is how you can test your code.
-    This is very similar to how the autograder will test your code too.
+    # get instructions by pc
+    pc = Register(32)
 
-    1. Write a MIPS program. It can do anything as long as it tests the
-       instructions you want to test.
+    instr = {  # instruction wires
+            'op' : WireVector(6, 'op'),
+            'rs' : WireVector(5, 'rs'),
+            'rt' : WireVector(5, 'rt'),
+            'rd' : WireVector(5, 'rd'),
+            #'sh' : WireVector(5, 'sh'),
+            'func' : WireVector(6, 'func'),
+            'imm' : WireVector(16, 'imm')  # for I-type 
+           # 'addr' : WireVector(26, 'addr')  # for J-type instruct
+    }
 
-    2. Assemble your MIPS program to convert it to machine code. Save
-       this machine code to the "i_mem_init.txt" file.
-       You do NOT want to use QtSPIM for this because QtSPIM sometimes
-       assembles with errors. One assembler you can use is the following:
+    control_sigs = {  # control signal wires
+            'reg_dst' : WireVector(1, 'reg_dst'),
+            'branch' : WireVector(1, 'branch'),
+            'reg_write' : WireVector(1, 'reg_write'),
+            'alu_src' : WireVector(2, 'alu_src'),
+            'mem_write' : WireVector(1, 'mem_write'),
+            'mem_to_reg' : WireVector(1, 'mem_to_reg'),
+            'alu_op' : WireVector(3, 'alu_op')
+    }
 
-       https://alanhogan.com/asu/assembler.php
-
-    3. Initialize your i_mem (instruction memory).
-
-    4. Run your simulation for N cycles. Your program may run for an unknown
-       number of cycles, so you may want to pick a large number for N so you
-       can be sure that the program so that all instructions are executed.
-
-    5. Test the values in the register file and memory to make sure they are
-       what you expect them to be.
-
-    6. (Optional) Debug. If your code didn't produce the values you thought
-       they should, then you may want to call sim.render_trace() on a small
-       number of cycles to see what's wrong. You can also inspect the memory
-       and register file after every cycle if you wish.
-
-    Some debugging tips:
-
-        - Make sure your assembly program does what you think it does! You
-          might want to run it in a simulator somewhere else (SPIM, etc)
-          before debugging your PyRTL code.
-
-        - Test incrementally. If your code doesn't work on the first try,
-          test each instruction one at a time.
-
-        - Make use of the render_trace() functionality. You can use this to
-          print all named wires and registers, which is extremely helpful
-          for knowing when values are wrong.
-
-        - Test only a few cycles at a time. This way, you don't have a huge
-          500 cycle trace to go through!
-
-    """
+    cpu(pc, i_mem, d_mem, rf, instr, control_sigs)
 
     # Start a simulation trace
-    sim_trace = pyrtl.SimulationTrace()
+    sim_trace = SimulationTrace()
 
     # Initialize the i_mem with your instructions.
     i_mem_init = {}
@@ -307,7 +197,7 @@ if __name__ == '__main__':
             i_mem_init[i] = int(line, 16)
             i += 1
 
-    sim = pyrtl.Simulation(tracer=sim_trace, memory_value_map={
+    sim = Simulation(tracer=sim_trace, memory_value_map={
         i_mem : i_mem_init
     })
 
@@ -316,7 +206,8 @@ if __name__ == '__main__':
         sim.step({})
 
     # Use render_trace() to debug if your code doesn't work.
-    # sim_trace.render_trace()
+    sim_trace.render_trace()
+    # set_debug_mode(debug=True)
 
     # You can also print out the register file or memory like so if you want to debug:
     # print(sim.inspect_mem(d_mem))
