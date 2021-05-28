@@ -4,17 +4,22 @@ import pyrtl
 from pyrtl import *
 
 # TODO
-# finish alu operations for each instruction in alu()
-# hook up to MIPS instructions and test
+# look at debugging tips on piazza
+# go through sample_test.s and see what is wrong w/ output
+    # so far just the BEQ: just skips pc forward
+    # branch only goes forward 3 places rather than 7
+# change test, figure out which instructions are working
+# finish alu implementation
+    # LUI: need to find a way to get upper 16 bytes of immed
+    # SLT: = input1 < input2 i think?
+    # BEQ: use zero reg & with branch_sig if not equal
 
 def decode(instruction, instr):
     instr['func'] <<= instruction[:6]
-    #instr['sh'] <<= instruction[6:11]
     instr['rd'] <<= instruction[11:16]
     instr['rt'] <<= instruction[16:21]
     instr['rs'] <<= instruction[21:26]
     instr['op'] <<= instruction[26:]
-    #instr['addr'] <<= instruction[:26]
     instr['imm'] <<= instruction[:16]
 
 def controller(op, func, control_sigs):
@@ -84,12 +89,13 @@ def write_back_reg(write_reg, write_data, rf, reg_write):
 def write_back_mem(mem_addr, write_data, d_mem, mem_write):
     d_mem[mem_addr] <<= MemBlock.EnabledWrite(write_data, enable=mem_write)
 
-def pc_update(pc, branch_sig, addr):
+def pc_update(pc, branch_sig, sign_extended_immed):
     pc_next = WireVector(32)  # this will be the next pc value
     pc_incr = WireVector(32)  # wire after pc is incremented
     pc_branch = WireVector(32)  # wire after branch jump
     pc_incr <<= pc + 1  # always start by incrementing pc to next address
-    pc_branch <<= addr  # included pyrtl function
+    pc_branch <<= pc_incr + sign_extended_immed
+        # branch: pc = pc + 1 + sign_extended_immed
 
     # use a mux w/ control-sig branch as input to decide if jump needed
     with conditional_assignment:
@@ -148,9 +154,7 @@ def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
     write_back_mem(alu_out, rt_data, d_mem, control_sigs['mem_write'])
     
     # increment pc
-    immed_ext = WireVector(32, 'immed_ext')
-    immed_ext <<= instr['imm'].sign_extended(32)
-    pc.next <<= pc_update(pc, control_sigs['branch'], immed_ext)
+    pc.next <<= pc_update(pc, control_sigs['branch'], instr['imm'].sign_extended(32))
     
 ########################################################################
 
@@ -167,10 +171,8 @@ instr = {  # instruction wires
         'rs' : WireVector(5, 'rs'),
         'rt' : WireVector(5, 'rt'),
         'rd' : WireVector(5, 'rd'),
-        #'sh' : WireVector(5, 'sh'),
         'func' : WireVector(6, 'func'),
         'imm' : WireVector(16, 'imm')  # for I-type 
-       # 'addr' : WireVector(26, 'addr')  # for J-type instruct
 }
 
 control_sigs = {  # control signal wires
@@ -205,7 +207,7 @@ if __name__ == '__main__':
     })
 
     # Run for an arbitrarily large number of cycles.
-    for cycle in range(500):
+    for cycle in range(15):  # make this 500
         sim.step({})
 
     # Use render_trace() to debug if your code doesn't work.
@@ -213,10 +215,10 @@ if __name__ == '__main__':
     # set_debug_mode(debug=True)
 
     # You can also print out the register file or memory like so if you want to debug:
-    # print(sim.inspect_mem(d_mem))
-    # print(sim.inspect_mem(rf))
+    print('d_mem:', sim.inspect_mem(d_mem), '(d_mem[0] should be 10)')
+    print('rf:', sim.inspect_mem(rf), '(rf[8] should be 10)')
 
     # Perform some sanity checks to see if your program worked correctly
-    assert(sim.inspect_mem(d_mem)[0] == 10)
-    assert(sim.inspect_mem(rf)[8] == 10)    # $v0 = rf[8]
-    print('Passed!')
+    #assert(sim.inspect_mem(d_mem)[0] == 10)
+    #assert(sim.inspect_mem(rf)[8] == 10)    # $v0 = rf[8]
+    # print('Passed!')
