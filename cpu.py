@@ -62,7 +62,7 @@ def alu(input1, input2, alu_op): #, zero_reg):
     AND = input1 & input2
     LUI = input2  # load upper immediate
     ORI = input1 | input2  # or immediate
-    SLT =input1  # (WRONG) set less than (set if less than) <-- use zero reg & subtract to compare
+    SLT = input1  # (WRONG) set less than (set if less than) <-- use zero reg & subtract to compare
     BEQ = input1  # (WRONG) branch on equal (subtract & compare to zero reg)
 
     alu_output = WireVector(32)  # output
@@ -91,19 +91,11 @@ def write_back_mem(mem_addr, write_data, d_mem, mem_write):
 
 def pc_update(pc, branch_sig, sign_extended_immed):
     pc_next = WireVector(32)  # this will be the next pc value
-    pc_incr = WireVector(32)  # wire after pc is incremented
-    pc_branch = WireVector(32)  # wire after branch jump
-    pc_incr <<= pc + 1  # always start by incrementing pc to next address
-    pc_branch <<= pc_incr + sign_extended_immed
-        # branch: pc = pc + 1 + sign_extended_immed
-
-    # use a mux w/ control-sig branch as input to decide if jump needed
-    with conditional_assignment:
+    with conditional_assignment:  # mux to decide if pc jump needed
         with branch_sig == 0:
-            pc_next |= pc_incr
-        with branch_sig == 1:
-            pc_next |= pc_branch
-
+            pc_next |= pc + 1
+        with branch_sig == 1:  # branch: pc = pc + 1 + sign_extended_immed
+            pc_next |= pc + 1 + sign_extended_immed
     return pc_next
 
 def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
