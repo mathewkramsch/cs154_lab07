@@ -52,18 +52,18 @@ def controller(op, func, control_sigs):
     control_sigs['branch'] <<= control_hex[8]
     control_sigs['reg_dst'] <<= control_hex[9]
 
-def alu(input1, input2, alu_op): #, zero_reg):
+def alu(input1, input2, alu_op, alu_output, alu_branch_enable): #, zero_reg):
     # make zero register for comparison instructions 
     # (subtract and compare result to zero)
+   # alu_branch_enable = WireVector(1, 'alu_branch_enable')
+   # alu_output = WireVector(32, 'alu_output')  # output
 
     ADD = input1 + input2  # shared w/ addi, lw, sw
     AND = input1 & input2
     LUI = input2  # load upper immediate
     ORI = input1 | input2  # or immediate
     SLT = pyrtl.signed_lt(input1,input2)  # SLT = input1<input2? 1:0
-    BEQ = input1  # (WRONG) branch on equal (subtract & compare to zero reg)
-
-    alu_output = WireVector(32)  # output
+    BEQ = input2 - input1  # subtract & compare to zero reg
     
     with conditional_assignment:
         with alu_op == 0: alu_output |= ADD
@@ -76,9 +76,10 @@ def alu(input1, input2, alu_op): #, zero_reg):
         with alu_op == 4:
             alu_output|= SLT
         with alu_op == 5:
-            alu_output |= BEQ
-
-    return alu_output
+            with BEQ == 0:
+                alu_branch_enable |= 1
+            with otherwise:
+                alu_branch_enable |= 0
 
 def write_back_reg(write_reg, write_data, rf, reg_write):
     rf[write_reg] <<= MemBlock.EnabledWrite(write_data, enable=reg_write)
@@ -86,13 +87,16 @@ def write_back_reg(write_reg, write_data, rf, reg_write):
 def write_back_mem(mem_addr, write_data, d_mem, mem_write):
     d_mem[mem_addr] <<= MemBlock.EnabledWrite(write_data, enable=mem_write)
 
-def pc_update(pc, branch_sig, sign_extended_immed):
+def pc_update(pc, branch_sig, alu_branch_enable, sign_extended_immed):
     pc_next = WireVector(32)  # this will be the next pc value
     with conditional_assignment:  # mux to decide if pc jump needed
         with branch_sig == 0:
             pc_next |= pc + 1
         with branch_sig == 1:  # branch: pc = pc + 1 + sign_extended_immed
-            pc_next |= pc + 1 + sign_extended_immed
+            with alu_branch_enable == 0:
+                pc_next |= pc + 1
+            with alu_branch_enable == 1:
+                pc_next |= pc + 1 + sign_extended_immed
     return pc_next
 
 def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
@@ -110,6 +114,7 @@ def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
 
     # pass instructions through alu
     alu_out = WireVector(32, 'alu_out')
+    alu_branch_enable = WireVector(32, 'alu_branch_enable')
     input2 = WireVector(32, 'alu_operand')
     with conditional_assignment:  # figure out what to input into alu
         with control_sigs['alu_src'] == 0: 
@@ -121,7 +126,7 @@ def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
         with control_sigs['alu_src'] == 3:
             input2 |= instr['imm'].zero_extended(32)  # (WRONG) imm, 16'b0 for lui: load upper immediate
     #zero_reg = Register(32)  # initialize zero register
-    alu_out <<= alu(rs_data, input2, control_sigs['alu_op'])#, zero_reg)
+    alu(rs_data, input2, control_sigs['alu_op'], alu_out, alu_branch_enable)#, zero_reg)
 
     # determine which register to write to
     write_register = WireVector(32, 'write_register')
@@ -143,7 +148,7 @@ def cpu(pc, i_mem, d_mem, rf, instr, control_sigs):
     write_back_mem(alu_out, rt_data, d_mem, control_sigs['mem_write'])
     
     # increment pc
-    pc.next <<= pc_update(pc, control_sigs['branch'], instr['imm'].sign_extended(32))
+    pc.next <<= pc_update(pc, control_sigs['branch'], alu_branch_enable, instr['imm'].sign_extended(32))
     
 ########################################################################
 
@@ -196,7 +201,7 @@ if __name__ == '__main__':
     })
 
     # Run for an arbitrarily large number of cycles.
-    for cycle in range(15):  # make this 500
+    for cycle in range(500):  # make this 500
         sim.step({})
 
     # Use render_trace() to debug if your code doesn't work.
@@ -208,6 +213,6 @@ if __name__ == '__main__':
     print('rf:', sim.inspect_mem(rf), '(rf[8] should be 10)')
 
     # Perform some sanity checks to see if your program worked correctly
-    #assert(sim.inspect_mem(d_mem)[0] == 10)
-    #assert(sim.inspect_mem(rf)[8] == 10)    # $v0 = rf[8]
-    # print('Passed!')
+    assert(sim.inspect_mem(d_mem)[0] == 10)
+    assert(sim.inspect_mem(rf)[8] == 10)    # $v0 = rf[8]
+    print('Passed!')
