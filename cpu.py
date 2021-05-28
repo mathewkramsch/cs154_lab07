@@ -5,14 +5,12 @@ from pyrtl import *
 
 # TODO
 # look at debugging tips on piazza
-# go through sample_test.s and see what is wrong w/ output
-    # so far just the BEQ: just skips pc forward
-    # branch only goes forward 3 places rather than 7
-# change test, figure out which instructions are working
+# see how to do lui on piazza
 # finish alu implementation
     # LUI: need to find a way to get upper 16 bytes of immed
     # SLT: = input1 < input2 i think?
     # BEQ: use zero reg & with branch_sig if not equal
+# change test, figure out which instructions are working
 
 def decode(instruction, instr):
     instr['func'] <<= instruction[:6]
@@ -62,14 +60,13 @@ def alu(input1, input2, alu_op): #, zero_reg):
     AND = input1 & input2
     LUI = input2  # load upper immediate
     ORI = input1 | input2  # or immediate
-    SLT = input1  # (WRONG) set less than (set if less than) <-- use zero reg & subtract to compare
+    SLT = pyrtl.signed_lt(input1,input2)  # SLT = input1<input2? 1:0
     BEQ = input1  # (WRONG) branch on equal (subtract & compare to zero reg)
 
     alu_output = WireVector(32)  # output
     
     with conditional_assignment:
-        with alu_op == 0:
-            alu_output |= ADD
+        with alu_op == 0: alu_output |= ADD
         with alu_op == 1:
             alu_output |= AND
         with alu_op == 2:
@@ -203,7 +200,7 @@ if __name__ == '__main__':
         sim.step({})
 
     # Use render_trace() to debug if your code doesn't work.
-    sim_trace.render_trace()
+    sim_trace.render_trace(symbol_len=6)
     # set_debug_mode(debug=True)
 
     # You can also print out the register file or memory like so if you want to debug:
